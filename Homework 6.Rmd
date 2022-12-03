@@ -93,11 +93,6 @@ The point of this is not to say you should always use the bootstrap -- it's poss
 
 
 
-
-
-
-
-
 # Problem 2
 
 ## Describe the raw data
@@ -201,6 +196,8 @@ results = map(city_fitlogistic$models, broom::tidy, conf.int = TRUE) %>%
 
 ## Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
 
+I have loaded the birthweight data and converted `gaweeks` to numeric.
+
 ```{r}
 race_birthweight_df = read.csv("birthweight.csv") %>%
   mutate(
@@ -215,21 +212,23 @@ Premature = less than 37 weeks
 Full Term = 37-42 weeks
 Post Term = beyond 42 weeks gestation
 
+I am using race and gestational age as predictors for birth weight because Black women have two times the rate of preterm birth compared to white women. In turn, since the babies are preterm they also weigh less. I wanted to see if this data would reveal what many research studies have revealed. 
 
 ## Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
 
-
+We are considering birth weight as an outcome that may depend on race and gestational age. 
 
 ```{r}
 fit = lm(bwt ~ mrace + gaweeks, data = race_birthweight_df)
 ```
 
+The `broom` package has functions for obtaining a summary of the model and for cleaning up the coefficient table. From here we can select what we actually want to look at. 
 
 ```{r}
 fit %>% 
   broom::tidy ()
 ```
-
+From the broom tidying we selected term, estimate, and p.value 
 
 ```{r}
 fit %>% 
@@ -240,7 +239,7 @@ fit %>%
 ```
 
 
-
+Here we want to look at residuals and predictions.
 ```{r}
 modelr::add_residuals(race_birthweight_df, fit)
 ```
@@ -250,6 +249,8 @@ modelr::add_residuals(race_birthweight_df, fit)
 modelr::add_predictions(race_birthweight_df, fit)
 ```
 
+
+Next we combine the residual and prediction output with the modelr package so that we can visualize the outputs (a plot of model residuals against fitted values). Here we see a plot, that does not appear to have linearity.
 ```{r}
 race_birthweight_df %>% 
   modelr::add_residuals(fit)%>%
@@ -265,7 +266,7 @@ Reading in the data
 birthweight_df = read.csv("birthweight.csv")
 ```
 
-The plot below suggests....
+The plot below suggests non linearity especially at the higher end of the distribution. 
 
 ```{r}
 birthweight_df %>% 
@@ -273,6 +274,7 @@ birthweight_df %>%
   geom_point(alpha = 0.5)
 ```
 
+For the piecewise linear fit, we need to add a “change point term” to our dataframe.
 
 ```{r}
 birthweight_df =
@@ -280,14 +282,14 @@ birthweight_df =
   mutate(length_cp = (blength > 7) * (blength - 7))
 ```
 
-
+The code chunk below fits each of the candidate models to the full dataset. The piecewise linear model is nested in the linear model and could be assessed using statistical significance, but the smooth model is not nested in anything else.
 ```{r}
 linear_mod = lm(bwt ~ gaweeks + blength, data = birthweight_df)
 pwl_mod    = lm(bwt ~ gaweeks + blength + length_cp, data = birthweight_df)
 smooth_mod = gam(bwt ~ s(gaweeks) + s(blength), data = birthweight_df)
 ```
 
-
+Plotting all three models to assess goodness of fit.
 ```{r}
 birthweight_df %>% 
   gather_predictions(linear_mod, pwl_mod, smooth_mod) %>% 
@@ -298,7 +300,10 @@ birthweight_df %>%
   facet_grid(~model)
 ```
 
+The non-linear model looks much different than the linear model and the piecewise model.
 
+
+Since I want to fit a gam model, I have to convert the resample objects produced by crossv_mc to dataframes, but wouldn’t have to do this if I only wanted to compare the linear and piecewise models.
 ```{r}
 cv_df =
   crossv_mc(birthweight_df, 100) %>% 
@@ -306,6 +311,9 @@ cv_df =
     train = map(train, as_tibble),
     test = map(test, as_tibble))
 ```
+
+Next I’ll use mutate + map & map2 to fit models to training data and obtain corresponding RMSEs for the testing data.
+
 
 ```{r}
 cv_df = 
@@ -320,6 +328,8 @@ cv_df =
     rmse_smooth = map2_dbl(smooth_mod, test, ~rmse(model = .x, data = .y)))
 ```
 
+
+Finally, I’ll plot the prediction error distribution for each candidate model.
 ```{r}
 cv_df %>% 
   select(starts_with("rmse")) %>% 
@@ -333,29 +343,26 @@ cv_df %>%
 
 ```
 
+
+There is some improvement in predictive accuracy gained by allowing non-linearity. If it is correct or enough to justify using this model, I am uncertain.
+
 ## One using head circumference, length, sex, and all interactions (including the three-way interaction) between these. Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
-Reading in the data
+Reading in the data. Repeating the same steps as above.
 ```{r}
 all_birthweight_df = read.csv("birthweight.csv")
 ```
 
-```{r}
-all_birthweight_df =
-  all_birthweight_df %>% 
-  mutate(length_cp = (blength > 7) * (blength - 7))
-```
-
+The code chunk below fits each of the candidate models to the full dataset.
 ```{r}
 linear_mod2 = lm(bwt ~ bhead + blength + babysex + (bhead * blength * babysex), data = all_birthweight_df)
-pwl_mod2 = lm(bwt ~ bhead + blength + length_cp + babysex +(bhead * blength * babysex), data = all_birthweight_df)
-smooth_mod2 = lm(bwt ~ bhead + blength + babysex + (bhead * blength * babysex), data = all_birthweight_df)
 ```
 
 
+Plotting all three models to assess goodness of fit.
 ```{r}
 all_birthweight_df %>% 
-  gather_predictions(linear_mod2, pwl_mod2, smooth_mod2) %>% 
+  gather_predictions(linear_mod2) %>% 
   mutate(model = fct_inorder(model)) %>% 
   ggplot(aes(x = blength, y = bwt)) + 
   geom_point(alpha = .5) +
@@ -376,15 +383,13 @@ cv_df2 =
 cv_df2 = 
   cv_df2 %>% 
   mutate(
-    linear_mod2  = map(train, ~lm(bwt ~ bhead + blength + babysex + (bhead * blength * babysex), data = .x)),
-    pwl_mod2     = map(train, ~lm(bwt ~ bhead + blength + length_cp + babysex +(bhead * blength * babysex), data = .x)),
-    smooth_mod2  = map(train, ~lm(bwt ~ bhead + blength + babysex + (bhead * blength * babysex)), data = .x)) %>% 
+    linear_mod2  = map(train, ~lm(bwt ~ bhead + blength + babysex + (bhead * blength * babysex), data = .x))) %>% 
   mutate(
-    rmse_linear = map2_dbl(linear_mod, test, ~rmse(model = .x, data = .y)),
-    rmse_pwl    = map2_dbl(pwl_mod, test, ~rmse(model = .x, data = .y)),
-    rmse_smooth = map2_dbl(smooth_mod, test, ~rmse(model = .x, data = .y)))
+    rmse_linear = map2_dbl(linear_mod2, test, ~rmse(model = .x, data = .y))) 
 ```
 
+
+The model produced below seems to encompass more than the models created above because it includes more predictors. The overall plot is wider and has more length.
 ```{r}
 cv_df2 %>% 
   select(starts_with("rmse")) %>% 
