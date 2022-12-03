@@ -167,7 +167,7 @@ fit_logistic %>%
 ## Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
 
 
-```{r}
+```
 city_fitlogistic = homicide_data %>% 
   mutate(
     disposition= ifelse(disposition == "Unsolved", 0, 1)) %>% 
@@ -177,7 +177,7 @@ city_fitlogistic = homicide_data %>%
 ```
 
 
-```{r}
+```
 results = map(city_fitlogistic$models, broom::tidy, conf.int = TRUE) %>% 
   select(city_state, models) %>% 
   unnest(cols = results)
