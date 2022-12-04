@@ -124,8 +124,8 @@ filter(victim_race != "Hispanic") %>%
     filter(victim_race != "Asian") %>%
   filter(victim_race != "Unknown") %>% 
 filter(victim_age != "Unknown") 
-
-homicide_data$disposition = str_replace(homicide_data$disposition, "Closed without arrest", "Unsolved")
+  
+  homicide_data$disposition = str_replace(homicide_data$disposition, "Closed without arrest", "Unsolved")
  homicide_data$disposition = str_replace(homicide_data$disposition, "Open/No arrest", "Unsolved") 
   homicide_data$disposition = str_replace(homicide_data$disposition, "Closed by arrest", "Solved")
 ```
@@ -183,18 +183,96 @@ fit_logistic %>%
 
 ## Now run glm for each of the cities in your dataset, and extract the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims. Do this within a “tidy” pipeline, making use of purrr::map, list columns, and unnest as necessary to create a dataframe with estimated ORs and CIs for each city.
 
-    city_fitlogistic = homicide_data %>% 
-      mutate(
-        disposition= ifelse(disposition == "Unsolved", 0, 1)) %>% 
-      nest(data = -city_state) %>% 
-      mutate(
-        models = map(data, ~glm(disposition ~ victim_age + victim_race + victim_sex, data = ., family = binomial()))) 
+After trying multiple different things and phoning a friend I cleaned
+the data a different way and was finally able to get the problem to
+work. We moved city, state column to the front of the dataset using the
+relocate function.
 
-    results = map(city_fitlogistic$models, broom::tidy, conf.int = TRUE) %>% 
-      select(city_state, models) %>% 
-      unnest(cols = results)
+``` r
+homicide_data2 = 
+ read.csv("homicide-data.csv") %>%  
+  mutate(
+    city_state = str_c(city,", ", state), 
+    solved = case_when(disposition == "Closed by arrest" ~ 1,
+                          disposition != "Closed by arrest" ~ 0)
+  ) %>% 
+  filter(
+    city_state != "Dallas, Tx", 
+    city_state != "Phoenix, AZ",
+    city_state != "Kansas City, MO", 
+    city_state != "Tulsa, AL"
+  ) %>% 
+  filter(
+    victim_race == "White" | victim_race == "Black"
+  ) %>% 
+  mutate(
+    victim_age = as.numeric(victim_age),
+    victim_race = fct_relevel(victim_race, "white")
+  ) %>% 
+  relocate(city_state)
+```
+
+Next we are running a model using the `homicide_data2` set. Then we are
+nesting the city_state through solved disposition and calling it data.
+From there we are creating `model` and `results` by mapping the nested
+data and then mapping the `result` that came from that. From there we
+want to look at `city_state` in the `results` data frame. Since we want
+to look at all of that we unnest it and view what we are looking for by
+using the selected function.
+
+``` r
+homicide_plotdf = 
+homicide_data2 %>% 
+  nest(df = -city_state) %>% 
+  mutate(
+    models = map(.x = df, ~glm(solved ~ victim_age + victim_sex + victim_race, data = ., family = binomial())),
+    results = map(.x = models, ~broom::tidy(.x, conf.int = TRUE, conf.level = 0.95))
+  ) %>% 
+  unnest(results) %>% 
+  filter(
+    term == "victim_sexMale"
+  ) %>% 
+  mutate(
+    city_state = as.factor(city_state),
+    city_state = fct_reorder(city_state, estimate)
+  )
+head(homicide_plotdf)
+```
+
+    ## # A tibble: 6 × 10
+    ##   city_state    df       models term  estimate std.e…¹ statis…²  p.value conf.…³
+    ##   <fct>         <list>   <list> <chr>    <dbl>   <dbl>    <dbl>    <dbl>   <dbl>
+    ## 1 Albuquerque,… <tibble> <glm>  vict…  5.70e-1   0.385  1.48e+0 1.39e- 1  -0.193
+    ## 2 Atlanta, GA   <tibble> <glm>  vict…  7.71e-5   0.194  3.97e-4 1.00e+ 0  -0.385
+    ## 3 Baltimore, MD <tibble> <glm>  vict… -8.54e-1   0.138 -6.18e+0 6.26e-10  -1.13 
+    ## 4 Baton Rouge,… <tibble> <glm>  vict… -9.64e-1   0.306 -3.15e+0 1.65e- 3  -1.59 
+    ## 5 Birmingham, … <tibble> <glm>  vict… -1.39e-1   0.212 -6.57e-1 5.11e- 1  -0.560
+    ## 6 Boston, MA    <tibble> <glm>  vict… -3.95e-1   0.326 -1.21e+0 2.26e- 1  -1.04 
+    ## # … with 1 more variable: conf.high <dbl>, and abbreviated variable names
+    ## #   ¹​std.error, ²​statistic, ³​conf.low
 
 ## Create a plot that shows the estimated ORs and CIs for each city. Organize cities according to estimated OR, and comment on the plot.
+
+Created a plot using the same method as HW 5.
+
+``` r
+homicide_plotdf %>% 
+ ggplot(aes(x = city_state, y = estimate)) + 
+  geom_boxplot() + 
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high), width = .2, 
+    position = position_dodge(.9)
+  ) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + 
+  theme(legend.position = "right") + 
+  labs(
+    x = "Cities",
+    y = "ORs of Solved Homicides",
+    title = "Solved Homicide OR Estimates & CI for Men to Women in Select Cities (n = 50) "
+    ) 
+```
+
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-9-1.png" width="90%" />
 
 # Problem 3
 
@@ -8971,7 +9049,7 @@ race_birthweight_df %>%
   ggplot(aes(x = pred, y = resid)) + geom_point() + geom_hline(yintercept = 0)
 ```
 
-<img src="Homework-6_files/figure-gfm/unnamed-chunk-14-1.png" width="90%" />
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-16-1.png" width="90%" />
 
 ## Compare your model to two others: One using length at birth and gestational age as predictors (main effects only). Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
 
@@ -8990,7 +9068,7 @@ birthweight_df %>%
   geom_point(alpha = 0.5)
 ```
 
-<img src="Homework-6_files/figure-gfm/unnamed-chunk-16-1.png" width="90%" />
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-18-1.png" width="90%" />
 
 For the piecewise linear fit, we need to add a “change point term” to
 our dataframe.
@@ -9024,7 +9102,7 @@ birthweight_df %>%
   facet_grid(~model)
 ```
 
-<img src="Homework-6_files/figure-gfm/unnamed-chunk-19-1.png" width="90%" />
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-21-1.png" width="90%" />
 
 The non-linear model looks much different than the linear model and the
 piecewise model.
@@ -9072,7 +9150,7 @@ cv_df %>%
   ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
-<img src="Homework-6_files/figure-gfm/unnamed-chunk-22-1.png" width="90%" />
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-24-1.png" width="90%" />
 
 There is some improvement in predictive accuracy gained by allowing
 non-linearity. If it is correct or enough to justify using this model, I
@@ -9105,7 +9183,7 @@ all_birthweight_df %>%
   facet_grid(~model)
 ```
 
-<img src="Homework-6_files/figure-gfm/unnamed-chunk-25-1.png" width="90%" />
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-27-1.png" width="90%" />
 
 ``` r
 cv_df2 =
@@ -9140,4 +9218,4 @@ cv_df2 %>%
   ggplot(aes(x = model, y = rmse)) + geom_violin()
 ```
 
-<img src="Homework-6_files/figure-gfm/unnamed-chunk-28-1.png" width="90%" />
+<img src="Homework-6_files/figure-gfm/unnamed-chunk-30-1.png" width="90%" />
